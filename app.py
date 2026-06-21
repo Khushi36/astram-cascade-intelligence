@@ -405,29 +405,43 @@ elif page == "Cascade Alert System":
     st.plotly_chart(fig_shap, width='stretch')
     st.caption("Factors derived from input feature values.")
     
-    # Deployment DataFrame Card — full context for operations officers
+    # Deployment DataFrame Card — shown for ALL tiers with tier-appropriate resources
+    st.subheader("Response Resource Action Card")
+    dep = alert_details['deployment']
+
+    # Tier-specific overrides for AMBER and GREEN (RED uses model output directly)
     if tier == "RED":
-        st.subheader("Response Resource Action Card")
-        dep = alert_details['deployment']
-        dep_df = pd.DataFrame([{
-            "Corridor": corridor_selected,
-            "Incident Cause": event_cause,
-            "Risk Level": alert_details['cascade_prediction']['confidence_band'],
-            "Police Officers": dep['police_needed'],
-            "Breakdown Units": dep['breakdown_needed'],
-            "Barricades": dep['barricades_needed'],
-            "Deployment Instruction": dep['DEPLOY_NOW'],
-            "Alert Station": dep['ALERT_STATIONS'],
-            "Estimated Clearance": alert_details['estimated_clearance_ist'],
-            "Status": dep['police_flag']
-        }])
-        st.dataframe(dep_df, width='stretch', hide_index=True)
+        police_disp   = dep['police_needed']
+        bd_disp       = dep['breakdown_needed']
+        barr_disp     = dep['barricades_needed']
+        action_disp   = dep['DEPLOY_NOW']
+        status_disp   = dep['police_flag']
     elif tier == "AMBER":
-        st.subheader("Response Resource Action Card")
-        st.info("Pre-positioning resources. No full deployment required at this time.")
-    else:
-        st.subheader("Response Resource Action Card")
-        st.success("No action required.")
+        police_disp   = max(dep['police_needed'], 2)
+        bd_disp       = max(dep['breakdown_needed'], 1)
+        barr_disp     = max(dep['barricades_needed'], 1)
+        action_disp   = f"Pre-position {police_disp} traffic police and {bd_disp} breakdown unit(s) near {corridor_selected}"
+        status_disp   = "STANDBY — deploy on confirmation"
+    else:  # GREEN
+        police_disp   = 1
+        bd_disp       = 1 if event_cause in ['accident', 'vehicle_breakdown', 'tree_fall'] else 0
+        barr_disp     = 1 if event_cause in ['accident', 'water_logging', 'tree_fall'] else 0
+        action_disp   = f"Dispatch 1 patrol officer to {corridor_selected} — standard incident monitoring"
+        status_disp   = "ROUTINE MONITORING"
+
+    dep_df = pd.DataFrame([{
+        "Corridor":               corridor_selected,
+        "Incident Cause":         event_cause,
+        "Risk Level":             f"{tier} ({risk*100:.0f}%)",
+        "Police Officers":        police_disp,
+        "Breakdown Units":        bd_disp,
+        "Barricades":             barr_disp,
+        "Deployment Instruction": action_disp,
+        "Alert Station":          dep['ALERT_STATIONS'],
+        "Estimated Clearance":    alert_details['estimated_clearance_ist'],
+        "Status":                 status_disp,
+    }])
+    st.dataframe(dep_df, width='stretch', hide_index=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE 3 — MARCH 7, 2024 REPLAY
