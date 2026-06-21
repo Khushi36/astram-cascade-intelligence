@@ -15,25 +15,63 @@ import joblib
 from datetime import datetime
 from pathlib import Path
 
-# Paths
-MODELS_DIR = Path(r"C:\Users\Khushi\Downloads\Traffic\model_outputs")
+# Paths — relative to this file so they work on Streamlit Cloud
+_BASE_DIR  = Path(__file__).parent
+MODELS_DIR = _BASE_DIR / "model_outputs"
 OUTPUT_DIR = MODELS_DIR
-DATA_DIR = Path(r"C:\Users\Khushi\Downloads\Traffic\eda_outputs")
-INPUT_CSV = Path(r"C:\Users\Khushi\Downloads\Traffic\Astram event data_anonymized - Astram event data_anonymizedb40ac87.csv")
+DATA_DIR   = _BASE_DIR / "eda_outputs"
+INPUT_CSV  = _BASE_DIR / "Astram event data_anonymized - Astram event data_anonymizedb40ac87.csv"
 
 # ══════════════════════════════════════════════════════════════════════════════
-# LOAD MODELS & CONFIG
+# LAZY LOAD — models and raw CSV are loaded once on first use, not at import
 # ══════════════════════════════════════════════════════════════════════════════
-print("Loading trained models and threshold...")
-model_a = joblib.load(MODELS_DIR / "cascade_seed_model.pkl")
-model_b = joblib.load(MODELS_DIR / "severity_model.pkl")
-model_c = joblib.load(MODELS_DIR / "count_model.pkl")
-le_sev = joblib.load(MODELS_DIR / "severity_target_encoder.pkl")
+_loaded = False
+model_a = model_b = model_c = le_sev = None
+CASCADE_THRESHOLD = 0.5
+le_cause = le_corr = None
+raw_df = None
+corridor_risk_map = {}
+corridor_total_counts = {}
 
-with open(MODELS_DIR / "cascade_threshold.txt", "r") as f:
-    CASCADE_THRESHOLD = float(f.read().strip())
-
-print(f"Loaded cascade model. Optimal threshold: {CASCADE_THRESHOLD:.3f}")
+def _ensure_loaded():
+    """Load models and raw CSV exactly once (lazy init for fast import)."""
+    global _loaded, model_a, model_b, model_c, le_sev, CASCADE_THRESHOLD
+    global le_cause, le_corr, raw_df, corridor_risk_map, corridor_total_counts
+    if _loaded:
+        return
+    from sklearn.preprocessing import LabelEncoder
+    print("Loading trained models and threshold...")
+    model_a = joblib.load(MODELS_DIR / "cascade_seed_model.pkl")
+    model_b = joblib.load(MODELS_DIR / "severity_model.pkl")
+    model_c = joblib.load(MODELS_DIR / "count_model.pkl")
+    le_sev  = joblib.load(MODELS_DIR / "severity_target_encoder.pkl")
+    with open(MODELS_DIR / "cascade_threshold.txt", "r") as f:
+        CASCADE_THRESHOLD = float(f.read().strip())
+    print(f"Loaded cascade model. Optimal threshold: {CASCADE_THRESHOLD:.3f}")
+    print("Rebuilding label encoders from the dataset...")
+    _raw = pd.read_csv(INPUT_CSV, low_memory=False)
+    _raw.replace('NULL', np.nan, inplace=True)
+    _raw.replace('nan',  np.nan, inplace=True)
+    _raw['corridor'] = _raw['corridor'].fillna('Non-corridor')
+    _raw['event_cause'] = _raw['event_cause'].fillna('others').astype(str).str.lower().str.strip()
+    _raw = _raw[_raw['event_cause'] != 'test_demo'].copy()
+    _CIVIC = {'public_event', 'procession', 'vip_movement', 'protest'}
+    _raw['event_cause_grouped'] = _raw['event_cause'].apply(
+        lambda x: 'civic_event' if x in _CIVIC else x
+    )
+    le_cause = LabelEncoder()
+    le_corr  = LabelEncoder()
+    _raw['event_cause_encoded'] = le_cause.fit_transform(_raw['event_cause_grouped'].astype(str))
+    _raw['corridor_encoded']    = le_corr.fit_transform(_raw['corridor'].astype(str))
+    corridor_high = (
+        _raw[_raw['priority'] == 'High']
+        .groupby('corridor')['id'].count()
+    )
+    _min, _max = corridor_high.min(), corridor_high.max()
+    corridor_risk_map    = ((corridor_high - _min) / (_max - _min)).to_dict()
+    corridor_total_counts = _raw['corridor'].value_counts().to_dict()
+    raw_df = _raw
+    _loaded = True
 
 # Configurable resources
 INITIAL_RESOURCES = {"traffic_police": 50, "breakdown_units": 8, "barricades": 20}
@@ -83,46 +121,15 @@ FEATURES_B = [
     'requires_road_closure', 'secondary_count'
 ]
 
-# We need encoders to convert input strings to label-encoded integers.
-# Let's rebuild encoders from the raw CSV data.
-print("Rebuilding label encoders from the dataset...")
-raw_df = pd.read_csv(INPUT_CSV, low_memory=False)
-raw_df.replace('NULL', np.nan, inplace=True)
-raw_df.replace('nan', np.nan, inplace=True)
-
-# Standardize values
-raw_df['corridor'] = raw_df['corridor'].fillna('Non-corridor')
-raw_df['event_cause'] = raw_df['event_cause'].fillna('others').astype(str).str.lower().str.strip()
-raw_df = raw_df[raw_df['event_cause'] != 'test_demo'].copy()
+# Civic causes constant (used in run_replay)
 CIVIC_CAUSES = {'public_event', 'procession', 'vip_movement', 'protest'}
-raw_df['event_cause_grouped'] = raw_df['event_cause'].apply(
-    lambda x: 'civic_event' if x in CIVIC_CAUSES else x
-)
-
-from sklearn.preprocessing import LabelEncoder
-le_cause = LabelEncoder()
-le_corr = LabelEncoder()
-raw_df['event_cause_encoded'] = le_cause.fit_transform(raw_df['event_cause_grouped'].astype(str))
-raw_df['corridor_encoded'] = le_corr.fit_transform(raw_df['corridor'].astype(str))
-
-# Create mapping dictionary for risk scores
-corridor_high = (
-    raw_df[raw_df['priority'] == 'High']
-    .groupby('corridor')['id']
-    .count()
-)
-min_val = corridor_high.min()
-max_val = corridor_high.max()
-corridor_risk_map = ((corridor_high - min_val) / (max_val - min_val)).to_dict()
-
-# Corridor count map for cascade density
-corridor_total_counts = raw_df['corridor'].value_counts().to_dict()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # COMPONENT 1 — PREDICT CASCADE
 # ══════════════════════════════════════════════════════════════════════════════
 def predict_cascade(event_row_dict: dict) -> dict:
+    _ensure_loaded()
     """
     Predicts cascade seed probability, secondary count forecast, and severity level.
     
@@ -232,6 +239,7 @@ def _build_deploy_message(police: int, breakdown: int, barricades: int, corridor
 
 
 def generate_alert(corridor: str, seed_event_row: dict, current_resources: dict) -> dict:
+    _ensure_loaded()
     """
     Generates a structured warning alert when a cascade seed event is detected.
     
@@ -398,13 +406,11 @@ def run_replay(date_str="2024-03-07", corridor="Mysore Road") -> list:
     Returns:
     list: List of generated alerts.
     """
+    _ensure_loaded()
     print(f"\n--- Running Replay for {corridor} on {date_str} ---")
     
-    # Reload original dataset to make sure we parse times cleanly
-    df_raw = pd.read_csv(INPUT_CSV, low_memory=False)
-    df_raw.replace('NULL', np.nan, inplace=True)
-    df_raw.replace('nan', np.nan, inplace=True)
-    
+    # Re-use the already-loaded raw_df (avoid re-reading 4.5 MB from disk)
+    df_raw = raw_df.copy()
     df_raw['start_datetime'] = pd.to_datetime(df_raw['start_datetime'], utc=True, errors='coerce')
     df_raw['start_ist'] = df_raw['start_datetime'].dt.tz_convert('Asia/Kolkata')
     
@@ -531,12 +537,10 @@ def deployment_plan_df(alerts_list: list) -> pd.DataFrame:
         
     plan_df = pd.DataFrame(records)
     
-    # Save files to both model outputs directory and parent workspace root
+    # Save files to model_outputs directory
     plan_df.to_csv(OUTPUT_DIR / "deployment_plan.csv", index=False)
     plan_df.to_json(OUTPUT_DIR / "deployment_plan.json", orient='records', indent=2)
-    plan_df.to_csv(Path(r"C:\Users\Khushi\Downloads\Traffic\deployment_plan.csv"), index=False)
-    plan_df.to_json(Path(r"C:\Users\Khushi\Downloads\Traffic\deployment_plan.json"), orient='records', indent=2)
-    print(f"Exported plan to model_outputs/ and workspace root.")
+    print(f"Exported plan to model_outputs/")
     
     return plan_df
 

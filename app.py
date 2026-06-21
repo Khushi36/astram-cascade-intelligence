@@ -95,33 +95,25 @@ ro = load_prediction_system()
 def load_data():
     df = pd.read_csv(Path(__file__).parent / "eda_outputs" / "traffic_events_engineered.csv")
     df['start_datetime_ist'] = pd.to_datetime(df['start_datetime_ist'])
-    
-    # Sort chronologically by corridor to tag cascade seeds
     df = df.sort_values(by=['corridor', 'start_datetime_ist']).reset_index(drop=True)
-    is_seed = []
-    sec_counts = []
-    
-    # Calculate seeds using 130m lookback and threshold >= 4
-    for i, row in df.iterrows():
-        curr_time = row['start_datetime_ist']
-        curr_corr = row['corridor']
-        if pd.isna(curr_corr) or curr_corr == 'Non-corridor':
-            is_seed.append(False)
-            sec_counts.append(0)
-            continue
-        subsequent = df.iloc[i+1:]
-        subsequent_same = subsequent[subsequent['corridor'] == curr_corr]
-        window_end = curr_time + pd.Timedelta(minutes=130)
-        following = subsequent_same[
-            (subsequent_same['start_datetime_ist'] > curr_time) & 
-            (subsequent_same['start_datetime_ist'] <= window_end)
-        ]
-        count = len(following)
-        sec_counts.append(count)
-        is_seed.append(count >= 4)
-        
-    df['is_cascade_seed'] = is_seed
-    df['sec_count'] = sec_counts
+
+    # Fast vectorized cascade seed computation (replaces O(n²) iterrows loop)
+    # Self-join on corridor, then filter to events within 130-minute window ahead
+    corridor_mask = df['corridor'].notna() & (df['corridor'] != 'Non-corridor')
+    df_corr = df[corridor_mask][['corridor', 'start_datetime_ist']].copy()
+    df_corr['_idx'] = df_corr.index
+
+    merged = df_corr.merge(df_corr, on='corridor', suffixes=('_seed', '_follow'))
+    window = pd.Timedelta(minutes=130)
+    merged = merged[
+        (merged['start_datetime_ist_follow'] > merged['start_datetime_ist_seed']) &
+        (merged['start_datetime_ist_follow'] <= merged['start_datetime_ist_seed'] + window)
+    ]
+    sec_count_map = merged.groupby('_idx_seed').size()
+
+    df['sec_count'] = df.index.map(sec_count_map).fillna(0).astype(int)
+    df.loc[~corridor_mask, 'sec_count'] = 0
+    df['is_cascade_seed'] = df['sec_count'] >= 4
     return df
 
 df = load_data()
