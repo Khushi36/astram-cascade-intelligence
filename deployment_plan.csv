@@ -1,0 +1,12 @@
+alert_id,corridor,time_ist,seed_cause,risk_score,deploy_police,deploy_breakdown,deploy_barricades,estimated_clearance,resource_flag
+ALERT-20240307-MRX-004,Mysore Road,10:51 IST,water_logging,0.99,4,3,3,2024-03-10 11:29:22 IST,ALLOCATED
+ALERT-20240307-MRX-007,Mysore Road,11:12 IST,tree_fall,0.99,4,2,3,2024-03-09 03:39:37 IST,ALLOCATED
+ALERT-20240307-MRX-008,Mysore Road,11:17 IST,water_logging,0.98,4,3,3,2024-03-10 11:55:53 IST,ALLOCATED
+ALERT-20240307-MRX-005,Mysore Road,11:10 IST,water_logging,0.92,4,0,3,2024-03-10 11:48:09 IST,RESOURCE SHORTFALL: request backup
+ALERT-20240307-MRX-009,Mysore Road,11:26 IST,water_logging,0.66,3,0,4,2024-03-10 12:04:34 IST,RESOURCE SHORTFALL: request backup
+ALERT-20240307-MRX-002,Mysore Road,02:48 IST,road_conditions,0.64,3,0,4,2024-03-11 06:37:52 IST,RESOURCE SHORTFALL: request backup
+ALERT-20240307-MRX-006,Mysore Road,11:10 IST,others,0.6,3,0,0,2024-03-09 00:17:59 IST,RESOURCE SHORTFALL: request backup
+ALERT-20240307-MRX-011,Mysore Road,11:45 IST,water_logging,0.56,3,0,0,2024-03-10 12:23:54 IST,RESOURCE SHORTFALL: request backup
+ALERT-20240307-MRX-010,Mysore Road,11:44 IST,water_logging,0.54,3,0,0,2024-03-10 12:22:19 IST,RESOURCE SHORTFALL: request backup
+ALERT-20240307-MRX-001,Mysore Road,02:10 IST,vehicle_breakdown,0.41,3,0,0,2024-03-07 03:08:43 IST,RESOURCE SHORTFALL: request backup
+ALERT-20240307-MRX-003,Mysore Road,05:37 IST,vehicle_breakdown,0.1,2,0,0,2024-03-07 06:35:28 IST,RESOURCE SHORTFALL: request backup

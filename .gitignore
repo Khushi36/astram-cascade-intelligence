@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDE
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+streamlit_err.txt
+streamlit_log.txt
+streamlit_out.txt
+*.log
+
+# Large data files (raw source data)
+Astram event data_anonymized*
+*_anonymized*.csv
+eda_outputs/traffic_events_engineered.csv
