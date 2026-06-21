@@ -91,6 +91,10 @@ def load_prediction_system():
 
 ro = load_prediction_system()
 
+# Session state — alert history log
+if 'alert_log' not in st.session_state:
+    st.session_state.alert_log = []
+
 # Load Dataset (cached data)
 @st.cache_data
 def load_data():
@@ -119,9 +123,28 @@ def load_data():
 
 df = load_data()
 
-# Navigation
+# Navigation + live mode + alert log
 st.sidebar.title("ASTRAM OPS")
 page = st.sidebar.radio("Navigation", ["Command Overview", "Cascade Alert System", "March 7, 2024 Replay (The Proof)"])
+
+# Live mode auto-refresh
+live_mode = st.sidebar.toggle("🔴 Live Mode (auto-refresh 30s)", value=False)
+if live_mode:
+    import time
+    time.sleep(30)
+    st.rerun()
+
+# Alert history log in sidebar
+if st.session_state.alert_log:
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("**🚨 Alert History (this session)**")
+    for entry in reversed(st.session_state.alert_log[-5:]):
+        colour = "🔴" if entry['tier'] == 'RED' else "🟠"
+        st.sidebar.caption(f"{colour} {entry['time'].strftime('%H:%M')} — {entry['corridor']} ({entry['risk']})")
+    if st.sidebar.button("Clear log"):
+        st.session_state.alert_log = []
+        st.rerun()
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE 1 — COMMAND OVERVIEW
@@ -325,17 +348,29 @@ elif page == "Cascade Alert System":
             typical_ps = 'Unknown Station'
             typical_risk = 0.0
             
-        # Build input features
+        # Build input features — compute rolling corridor counts from real data
+        now_proxy = df['start_datetime_ist'].max()  # latest event as proxy for "now"
+        window_2h = df[
+            (df['corridor'] == corridor_selected) &
+            (df['start_datetime_ist'] >= now_proxy - pd.Timedelta(hours=2))
+        ]
+        window_6h = df[
+            (df['corridor'] == corridor_selected) &
+            (df['start_datetime_ist'] >= now_proxy - pd.Timedelta(hours=6))
+        ]
+        dyn_events_2h = len(window_2h)
+        dyn_events_6h = len(window_6h)
+
         event_row_dict = {
             'hour_of_day': hour_ist,
             'day_of_week': day_of_week_num,
             'is_weekend': int(day_of_week_num in [5, 6]),
             'is_peak_hour': int((19 <= hour_ist <= 22) or (4 <= hour_ist <= 6)),
-            'is_heavy_vehicle': 1 if event_cause in ['vehicle_breakdown', 'construction'] else 0,
+            'is_heavy_vehicle': 1 if event_cause in ['vehicle_breakdown', 'construction', 'accident'] else 0,
             'corridor_risk_score': typical_risk,
-            'corridor_events_2h': 2,
-            'corridor_events_6h': 5,
-            'seed_event_present_3h': 1 if event_cause in ['water_logging', 'pot_holes'] else 0,
+            'corridor_events_2h': dyn_events_2h,
+            'corridor_events_6h': dyn_events_6h,
+            'seed_event_present_3h': 1 if event_cause in ['water_logging', 'pot_holes', 'tree_fall', 'construction'] else 0,
             'cascade_density': ro.corridor_total_counts.get(corridor_selected, 50) / 8173.0,
             'event_cause_grouped': event_cause,
             'corridor': corridor_selected,
@@ -343,7 +378,7 @@ elif page == "Cascade Alert System":
             'zone': typical_zone,
             'police_station': typical_ps,
             'time_ist': f"{hour_ist:02d}:00 IST",
-            'date_str': '20260617',
+            'date_str': datetime.now().strftime('%Y%m%d'),
             'seq_num': 1
         }
         
@@ -368,7 +403,17 @@ elif page == "Cascade Alert System":
     else:
         st.markdown('<div class="safe-banner">🟢 GREEN — LOW RISK ({:.0f}%) — Monitor only</div>'.format(risk*100), unsafe_allow_html=True)
         tier = "GREEN"
-        
+
+    # Append RED/AMBER to session alert log
+    if tier in ("RED", "AMBER"):
+        st.session_state.alert_log.append({
+            'time': datetime.now(),
+            'corridor': corridor_selected,
+            'risk': f"{risk*100:.0f}%",
+            'tier': tier,
+            'cause': event_cause,
+        })
+
     # Metrics 3-column row
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -476,8 +521,9 @@ elif page == "March 7, 2024 Replay (The Proof)":
         
     replay_data = load_replay_data()
     
-    # Slider
-    selected_hour = st.slider("Replay up to hour (IST)", min_value=0, max_value=24, value=10)
+    # Slider with helpful hint
+    st.info("⬅ Drag the slider right to replay the Mysore Road timeline hour by hour. The cascade seed fires at hour 11.")
+    selected_hour = st.slider("Replay up to hour (IST)", min_value=0, max_value=24, value=0)
     
     # Filter
     replay_filtered = replay_data[replay_data['start_ist'].dt.hour <= selected_hour]
