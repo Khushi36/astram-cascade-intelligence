@@ -356,8 +356,8 @@ elif page == "Cascade Alert System":
         
     risk = pred['cascade_probability']
     st.caption(f"⚡ Prediction computed in {latency_ms}ms")
-    
-    # Risk Banner
+
+    # ── Risk Banner — always first visible element ──────────────────────────
     risk = pred.get("cascade_probability", 0)
     if risk >= 0.60:
         st.markdown('<div class="cascade-alert">🔴 RED — HIGH CASCADE RISK ({:.0f}%) — Deploy immediately</div>'.format(risk*100), unsafe_allow_html=True)
@@ -557,11 +557,13 @@ elif page == "March 7, 2024 Replay (The Proof)":
         used_bd = 0
         used_barr = 0
         
-    # Progress bars for resource utilization
+    # Progress bars — always visible regardless of slider position
     st.subheader("Resource Deployment Capacity")
-    st.progress(used_police / 50.0, text=f"Officers deployed: {used_police}/50")
-    st.progress(used_bd / 8.0, text=f"Breakdown units: {used_bd}/8")
-    st.progress(used_barr / 20.0, text=f"Barricades: {used_barr}/20")
+    if selected_hour < 11:
+        st.caption("⏳ Awaiting cascade trigger — move slider past hour 11 to activate deployment")
+    st.progress(max(used_police / 50.0, 0.001), text=f"Officers deployed: {used_police}/50")
+    st.progress(max(used_bd / 8.0, 0.001),     text=f"Breakdown units deployed: {used_bd}/8")
+    st.progress(max(used_barr / 20.0, 0.001),  text=f"Barricades deployed: {used_barr}/20")
     
     # Download deployment plan button — generate from in-memory plan_df
     st.write("")
