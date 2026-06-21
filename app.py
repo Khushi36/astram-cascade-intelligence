@@ -128,9 +128,8 @@ page = st.sidebar.radio("Navigation", ["Command Overview", "Cascade Alert System
 # Live mode auto-refresh
 live_mode = st.sidebar.toggle("🔴 Live Mode (auto-refresh 30s)", value=False)
 if live_mode:
-    import time
-    time.sleep(30)
-    st.rerun()
+    from streamlit_autorefresh import st_autorefresh
+    st_autorefresh(interval=30000, key="live_mode_refresh")
 
 # Alert history log in sidebar
 if st.session_state.alert_log:
@@ -402,6 +401,16 @@ elif page == "Cascade Alert System":
     risk = pred['cascade_probability']
     st.caption(f"⚡ Prediction computed in {latency_ms}ms")
 
+    # Sidebar assessment indicator for instant visibility
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("**Current Assessment Status**")
+    if risk >= 0.60:
+        st.sidebar.markdown('<div style="background-color:#991b1b;color:white;padding:10px;border-radius:6px;font-weight:bold;text-align:center;font-size:0.9rem;">🔴 HIGH CASCADE RISK ({:.0f}%)</div>'.format(risk*100), unsafe_allow_html=True)
+    elif risk >= 0.30:
+        st.sidebar.markdown('<div style="background-color:#78350f;color:white;padding:10px;border-radius:6px;font-weight:bold;text-align:center;font-size:0.9rem;">🟠 MODERATE RISK ({:.0f}%)</div>'.format(risk*100), unsafe_allow_html=True)
+    else:
+        st.sidebar.markdown('<div style="background-color:#065f46;color:white;padding:10px;border-radius:6px;font-weight:bold;text-align:center;font-size:0.9rem;">🟢 LOW RISK ({:.0f}%)</div>'.format(risk*100), unsafe_allow_html=True)
+
     # ── Risk Banner — always first visible element ──────────────────────────
     risk = pred.get("cascade_probability", 0)
     if risk >= 0.60:
@@ -614,9 +623,11 @@ elif page == "March 7, 2024 Replay (The Proof)":
     st.subheader("Resource Deployment Capacity")
     if selected_hour < 11:
         st.caption("⏳ Awaiting cascade trigger — move slider past hour 11 to activate deployment")
-    st.progress(max(used_police / 50.0, 0.001), text=f"Officers deployed: {used_police}/50")
-    st.progress(max(used_bd / 8.0, 0.001),     text=f"Breakdown units deployed: {used_bd}/8")
-    st.progress(max(used_barr / 20.0, 0.001),  text=f"Barricades deployed: {used_barr}/20")
+        st.info("ℹ️ **Status: NOT YET DEPLOYED** (All resources are currently held in reserve: 50/50 Police, 8/8 Breakdown units, 20/20 Barricades available)")
+    else:
+        st.progress(max(used_police / 50.0, 0.001), text=f"Officers deployed: {used_police}/50")
+        st.progress(max(used_bd / 8.0, 0.001),     text=f"Breakdown units deployed: {used_bd}/8")
+        st.progress(max(used_barr / 20.0, 0.001),  text=f"Barricades deployed: {used_barr}/20")
     
     # Download deployment plan button — generate from in-memory plan_df
     st.write("")
