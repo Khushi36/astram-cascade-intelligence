@@ -463,7 +463,7 @@ elif page == "Cascade Alert System":
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)'
         )
-        st.plotly_chart(fig_gauge, use_container_width=True)
+        st.plotly_chart(fig_gauge, width='stretch')
         
         # Human readable summary
         st.markdown(f"""
@@ -497,7 +497,7 @@ elif page == "Cascade Alert System":
             height=240,
             margin=dict(l=20, r=20, t=50, b=10)
         )
-        st.plotly_chart(fig_shap, use_container_width=True)
+        st.plotly_chart(fig_shap, width='stretch')
         st.caption("Factors derived from dynamic model feature values.")
         
     st.write("")
