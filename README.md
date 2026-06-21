@@ -52,8 +52,8 @@ ASTRAM Event Feed
 ┌─────────────────────────┐
 │  ML Pipeline            │  model_pipeline.py
 │  ┌──────────────────┐   │  → Cascade Seed Classifier (XGBoost)
-│  │ Cascade Detector │   │  → Severity Estimator (Random Forest)
-│  └──────────────────┘   │  → Incident Count Predictor (Gradient Boost)
+│  │ Cascade Detector │   │  → Severity Estimator (XGBoost)
+│  └──────────────────┘   │  → Incident Count Predictor (XGBoost / Poisson)
 │  ┌──────────────────┐   │
 │  │ Severity Model   │   │
 │  └──────────────────┘   │
@@ -135,8 +135,8 @@ python model_pipeline.py            # Trains and saves model artefacts
 | Model | Algorithm | Purpose |
 |---|---|---|
 | Cascade Seed Classifier | XGBoost | Predicts if an event will trigger a cascade |
-| Severity Estimator | Random Forest | Estimates cascade severity level |
-| Incident Count Predictor | Gradient Boosting | Predicts number of follow-on incidents |
+| Severity Estimator | XGBoost | Estimates cascade severity level |
+| Incident Count Predictor | XGBoost (Poisson) | Predicts number of follow-on incidents |
 
 Key features used: corridor ID, incident type, hour of day, day of week, peak-hour flag, historical cascade frequency, rolling incident rate.
 

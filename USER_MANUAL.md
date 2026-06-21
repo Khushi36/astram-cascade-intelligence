@@ -123,19 +123,17 @@ A bar chart showing how many events occurred at each hour of the day (IST).
 
 ## 1.6 · Live Operations Map
 
-A Folium map showing individual event locations as coloured circles.
+An interactive Plotly WebGL Map showing individual event locations as colored markers.
 
-| Circle Color | Severity Level |
+| Marker Color | Severity Level |
 |---|---|
-| 🔴 Dark red | HIGH — Priority event with road closure |
+| 🔴 Red | HIGH — Priority event with road closure |
 | 🟡 Amber | MEDIUM — High priority OR road closure |
-| 🟢 Dark green | LOW — Neither high priority nor closure |
+| 🟢 Green | LOW — Neither high priority nor closure |
 
-**Circle size** scales with the **corridor risk score** (larger = higher-risk corridor).
+**Marker size** scales with the **corridor risk score** (larger = higher-risk corridor).
 
-**Click any circle** to see a popup with: Corridor name · Incident cause · Risk score · Severity level.
-
-> 💡 The map shows a maximum of 500 events. If your filter returns more, apply tighter date or corridor filters to see individual event detail.
+**Click any marker** to see a popup with: Corridor name · Incident cause · Risk score · Severity level.
 
 ---
 
@@ -182,7 +180,7 @@ All inputs are in the **left sidebar** under "Incident Parameter Matrix."
 
 ## 2.2 · Reading the Risk Banner
 
-The large coloured banner at the top of the main area shows the tier result.
+The large colored banner at the top of the main area shows the tier result.
 
 | Banner | Risk Score | What It Means | Action |
 |---|---|---|---|
@@ -206,61 +204,47 @@ This is the live inference time for the 3-model pipeline. Typical values: **10�
 
 ---
 
-## 2.4 · Metrics Row (3 columns)
+## 2.4 · Semicircular Risk Gauge (Left Column)
 
-| Column | What It Shows |
-|---|---|
-| **Expected secondary events in 2h** | Model C forecast — how many additional incidents the system expects on this corridor in the next 2 hours |
-| **Recommended action** | Plain-English deployment instruction (e.g., "Deploy 4 traffic police, 2 breakdown units → Mysore Road, ETA: subject to fleet positioning") |
-| **Estimated clearance** | Projected time when the incident is expected to be resolved, based on historical average resolution times for this cause |
-
-> ⚠️ **Note on clearance times:** Causes with very few historical records (e.g., `debris`) will show **(estimate — limited data)** appended to the clearance time. Treat these with extra caution.
+A custom, high-contrast Plotly Gauge visualizing the cascade risk probability percentage. It is segmented into distinct Green (0-30%), Amber (30-60%), and Red (60-100%) bands with a dark slate pointer indicator. It is accompanied by a dynamic, plain-English **Risk Assessment Summary card** describing the incident profile and severity recommendations.
 
 ---
 
-## 2.5 · Key Risk Factors Chart
+## 2.5 · Primary Risk Drivers (Right Column)
 
-A horizontal bar chart showing the **top 3 contributing factors** to the risk score for this specific prediction.
+A horizontal bar chart visualizing the top 3 contributing factors to the cascade probability, derived using true mathematical **SHAP Feature Contributions** computed directly from the XGBoost booster model. 
 
-| Factor Label | What It Represents |
-|---|---|
-| "Evening peak hour" | The selected hour falls in the operational peak window |
-| "Off-peak slot traffic profile" | Hour is outside the defined peak windows |
-| "Infrastructure seed nearby" | A seed-type event (water_logging, pot_holes, construction, tree_fall) occurred on this corridor within the past 3 hours |
-| "No active surrounding blockages" | No recent seed-type events on the corridor |
-| "Heavy vehicle involved" | The incident cause typically involves heavy vehicles (breakdown, construction) |
-| "Light vehicle involved" | The incident cause involves lighter vehicle types |
-
-> **Important:** Bar lengths represent **relative weights derived from input feature values**, not raw model internals. Use them to understand which factors are driving the score at a qualitative level.
+* **X-Axis**: Relative Contribution Weight
+* **Y-Axis**: Feature labels (e.g. Corridor local vulnerability, recent event rate, traffic peak flags)
 
 ---
 
-## 2.6 · Response Resource Action Card
+## 2.6 · Response Resource Action Dashboard
 
-This section **only appears for RED and AMBER alerts** (risk ≥ 30%).
+This dashboard displays the pre-emptive resource recommendations in a clean, visual grid:
 
-**For RED alerts**, a full deployment table is shown:
+* **👮 Traffic Police Card**: Officers recommended for direct dispatch.
+* **🚒 Breakdown Recovery Card**: Heavy towing units required to clear blockages.
+* **🚧 Barricades Card**: Blockage gates to redirect traffic flow.
 
-| Column | Meaning |
-|---|---|
-| **Corridor** | Where to deploy |
-| **Incident Cause** | What triggered the alert |
-| **Risk Level** | HIGH / MEDIUM / LOW confidence band |
-| **Police Officers** | Number of traffic police to deploy |
-| **Breakdown Units** | Number of recovery vehicles needed |
-| **Barricades** | Number of barricades to set up |
-| **Deployment Instruction** | Full plain-English dispatch text |
-| **Alert Station** | The police station responsible for this corridor |
-| **Estimated Clearance** | Projected clearance datetime (IST) |
-| **Status** | ALLOCATED (resources available) or RESOURCE SHORTFALL: request backup from [zone] |
-
-**For AMBER alerts:** A pre-positioning notice is shown — no full deployment card, but units should be placed on standby.
-
-**For GREEN alerts:** A "No action required" confirmation is shown.
+It is accompanied by a detailed **Operational Dispatch Details** panel detailing:
+* **Recommended Action**: Clear text instructions.
+* **Dispatch Station**: Duty station location.
+* **Estimated Clearance**: Projected duration formatted with relative strings (e.g. `clears in ~48 min`).
+* **Expected Secondary Count**: Expected follow-on events in the next 2 hours.
 
 ---
 
-## 2.7 · Resource Allocation Rules
+## 2.7 · Live Operations Control Console
+
+When **User Mode** is toggled to **Ops Dispatcher**, an interactive controls console is rendered:
+
+* **🚨 Confirm Immediate Dispatch**: Triggers an interactive green toast notification and updates the session history log with a `(DISPATCHED)` status.
+* **⏳ Order Pre-position Standby**: Triggers a standby warning banner and logs a `(STANDBY)` status.
+
+---
+
+## 2.8 · Resource Allocation Rules
 
 The system deploys resources in tiers based on the risk score:
 
