@@ -24,6 +24,7 @@ except ModuleNotFoundError:
 import joblib
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import LabelEncoder
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import classification_report, confusion_matrix, mean_absolute_error, mean_squared_error
 from pathlib import Path
 
@@ -152,30 +153,17 @@ corridor_df = df[~df['corridor'].isin(['Non-corridor', 'NULL']) & df['corridor']
 # Sort by corridor, then start_datetime
 corridor_df = corridor_df.sort_values(by=['corridor', 'start_datetime']).reset_index(drop=True)
 
-# Compute cascade seeds
-is_cascade_seed = []
-secondary_counts = []
+# Vectorized cascade seed computation (replaces O(n^2) iterrows loop)
+df_corr_ids = corridor_df[['id', 'corridor', 'start_datetime']].copy()
+merged_seeds = df_corr_ids.merge(df_corr_ids, on='corridor', suffixes=('_seed', '_follow'))
+merged_seeds = merged_seeds[
+    (merged_seeds['start_datetime_follow'] > merged_seeds['start_datetime_seed']) &
+    (merged_seeds['start_datetime_follow'] <= merged_seeds['start_datetime_seed'] + pd.Timedelta(minutes=120))
+]
+sec_counts = merged_seeds.groupby('id_seed').size().to_dict()
 
-for i, row in corridor_df.iterrows():
-    curr_time = row['start_datetime']
-    curr_corridor = row['corridor']
-    
-    # Get subsequent events on same corridor in next 120 minutes (strictly after current event)
-    subsequent = corridor_df.iloc[i+1:]
-    subsequent_same_corr = subsequent[subsequent['corridor'] == curr_corridor]
-    
-    window_end = curr_time + pd.Timedelta(minutes=120)
-    following_events = subsequent_same_corr[
-        (subsequent_same_corr['start_datetime'] > curr_time) & 
-        (subsequent_same_corr['start_datetime'] <= window_end)
-    ]
-    
-    count = len(following_events)
-    secondary_counts.append(count)
-    is_cascade_seed.append(count >= 3)
-
-corridor_df['is_cascade_seed'] = is_cascade_seed
-corridor_df['secondary_count'] = secondary_counts
+corridor_df['secondary_count'] = corridor_df['id'].map(sec_counts).fillna(0).astype(int)
+corridor_df['is_cascade_seed'] = corridor_df['secondary_count'] >= 3
 
 # Merge these back into the main dataframe (Non-corridor rows get False/0)
 df = df.merge(
@@ -213,34 +201,29 @@ df['corridor_events_2h'] = 0
 df['corridor_events_6h'] = 0
 df['seed_event_present_3h'] = 0
 
-# Group by corridor to calculate features
+# Group by corridor and compute vectorized rolling lookbacks
+seed_causes = {'water_logging', 'tree_fall', 'pot_holes', 'construction'}
+
 for corr, group in df.groupby('corridor'):
-    c_2h = []
-    c_6h = []
-    seed_3h = []
+    timestamps = group['start_datetime'].values
     
-    seed_causes = {'water_logging', 'tree_fall', 'pot_holes', 'construction'}
+    idx_2h = np.searchsorted(timestamps, timestamps - np.timedelta64(2, 'h'), side='left')
+    idx_6h = np.searchsorted(timestamps, timestamps - np.timedelta64(6, 'h'), side='left')
+    idx_3h = np.searchsorted(timestamps, timestamps - np.timedelta64(3, 'h'), side='left')
     
-    for idx, t in enumerate(group['start_datetime']):
-        t_2h_ago = t - pd.Timedelta(hours=2)
-        t_6h_ago = t - pd.Timedelta(hours=6)
-        t_3h_ago = t - pd.Timedelta(hours=3)
-        
-        past_group = group.iloc[:idx]
-        
-        events_2h = past_group[past_group['start_datetime'] >= t_2h_ago]
-        events_6h = past_group[past_group['start_datetime'] >= t_6h_ago]
-        events_3h = past_group[past_group['start_datetime'] >= t_3h_ago]
-        
-        c_2h.append(len(events_2h))
-        c_6h.append(len(events_6h))
-        
-        has_seed = 1 if any(events_3h['event_cause_grouped'].isin(seed_causes)) else 0
-        seed_3h.append(has_seed)
-        
+    row_indices = np.arange(len(group))
+    c_2h = row_indices - idx_2h
+    c_6h = row_indices - idx_6h
+    
+    is_seed_cause = group['event_cause_grouped'].isin(seed_causes).astype(int).values
+    cumsum_seeds = np.zeros(len(group) + 1, dtype=int)
+    cumsum_seeds[1:] = np.cumsum(is_seed_cause)
+    
+    seeds_3h = (cumsum_seeds[row_indices] - cumsum_seeds[idx_3h] > 0).astype(int)
+    
     df.loc[group.index, 'corridor_events_2h'] = c_2h
     df.loc[group.index, 'corridor_events_6h'] = c_6h
-    df.loc[group.index, 'seed_event_present_3h'] = seed_3h
+    df.loc[group.index, 'seed_event_present_3h'] = seeds_3h
 
 # Compute cascade density
 corridor_total_counts = df['corridor'].value_counts().to_dict()
@@ -305,7 +288,7 @@ num_pos = (y_train_a == 1).sum()
 scale_pos_weight = num_neg / num_pos if num_pos > 0 else 1.0
 print(f"Computed scale_pos_weight: {scale_pos_weight:.3f}")
 
-model_a = xgb.XGBClassifier(
+base_model_a = xgb.XGBClassifier(
     n_estimators=300,
     max_depth=6,
     learning_rate=0.05,
@@ -314,6 +297,7 @@ model_a = xgb.XGBClassifier(
     use_label_encoder=False,
     eval_metric='logloss'
 )
+model_a = CalibratedClassifierCV(estimator=base_model_a, method='isotonic', cv=5)
 model_a.fit(X_train_a, y_train_a)
 
 probs_test = model_a.predict_proba(X_test_a)[:, 1]
@@ -349,7 +333,7 @@ print(confusion_matrix(y_test_a, final_preds_a))
 
 if HAS_SHAP:
     try:
-        explainer = shap.TreeExplainer(model_a)
+        explainer = shap.TreeExplainer(model_a.calibrated_classifiers_[0].estimator)
         shap_values = explainer(X_test_a)
 
         plt.figure(figsize=(10, 6))
@@ -364,7 +348,8 @@ if HAS_SHAP:
         HAS_SHAP = False
 
 if not HAS_SHAP:
-    importances = model_a.feature_importances_
+    # Extract importances from calibrated base estimators
+    importances = np.mean([est.estimator.feature_importances_ for est in model_a.calibrated_classifiers_], axis=0)
     indices = np.argsort(importances)[::-1][:10]
     names = [features_a[i] for i in indices]
 

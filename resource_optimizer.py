@@ -325,7 +325,7 @@ def generate_alert(corridor: str, seed_event_row: dict, current_resources: dict)
     alert_seq = seed_event_row.get('seq_num', 1)
     alert_id = f"ALERT-{date_clean}-{corr_code}-{alert_seq:03d}"
     
-    # 3. Estimated clearance datetime
+    # 3. Estimated clearance datetime with relative duration
     res_min = AVG_RESOLUTIONS.get(cause, 60)
     start_time_val = seed_event_row.get('start_datetime')
     if isinstance(start_time_val, str):
@@ -340,28 +340,79 @@ def generate_alert(corridor: str, seed_event_row: dict, current_resources: dict)
         
     clearance_dt = start_dt + pd.Timedelta(minutes=res_min)
     clearance_dt_ist = clearance_dt.tz_convert('Asia/Kolkata') if hasattr(clearance_dt, 'tz_convert') else clearance_dt
-    clearance_str = clearance_dt_ist.strftime('%Y-%m-%d %H:%M:%S IST')
+    
+    diff_min = int(res_min)
+    if diff_min < 60:
+        rel_str = f"~{diff_min} min"
+    else:
+        hours = diff_min // 60
+        mins = diff_min % 60
+        rel_str = f"~{hours}h {mins}m" if mins > 0 else f"~{hours}h"
+    clearance_str = f"{clearance_dt_ist.strftime('%Y-%m-%d %H:%M:%S IST')} (clears in {rel_str})"
     
     if RESOLUTION_SAMPLE_N.get(cause, 100) < 10:
         clearance_str += " (estimate — limited data)"
     
-    # 4. English SHAP representations
-    shap_factors = []
-    # Logic to mock/translate shap relative to event attributes
-    if seed_event_row.get('is_peak_hour', 0) == 1:
-        shap_factors.append("Evening peak hour")
-    else:
-        shap_factors.append("Off-peak slot traffic profile")
-        
-    if seed_event_row.get('seed_event_present_3h', 0) == 1:
-        shap_factors.append("Infrastructure seed nearby")
-    else:
-        shap_factors.append("No active surrounding blockages")
-        
-    if seed_event_row.get('is_heavy_vehicle', 0) == 1:
-        shap_factors.append("Heavy vehicle involved")
-    else:
-        shap_factors.append("Light vehicle involved")
+    # 4. English SHAP representations using real model contributions
+    import xgboost as xgb
+    row_a = {}
+    for f in FEATURES_A:
+        if f in seed_event_row:
+            row_a[f] = seed_event_row[f]
+        else:
+            if f == 'event_cause_encoded':
+                cause_grp = seed_event_row.get('event_cause_grouped', 'others')
+                row_a[f] = le_cause.transform([cause_grp])[0] if cause_grp in le_cause.classes_ else le_cause.transform(['others'])[0]
+            elif f == 'corridor_encoded':
+                corr = seed_event_row.get('corridor', 'Non-corridor')
+                row_a[f] = le_corr.transform([corr])[0] if corr in le_corr.classes_ else le_corr.transform(['Non-corridor'])[0]
+            else:
+                row_a[f] = 0
+    df_row_a = pd.DataFrame([row_a])
+    dmat = xgb.DMatrix(df_row_a[FEATURES_A])
+    
+    # Average contributions from all calibrated base estimators
+    contribs = []
+    for clf in model_a.calibrated_classifiers_:
+        booster = clf.estimator.get_booster()
+        contribs.append(booster.predict(dmat, pred_contribs=True)[0])
+    mean_contribs = np.mean(contribs, axis=0)
+    feature_contribs = mean_contribs[:-1]
+    
+    contrib_dict = dict(zip(FEATURES_A, feature_contribs))
+    
+    feature_labels = {
+        'hour_of_day': 'Hour of day profile',
+        'day_of_week': 'Day of week pattern',
+        'is_weekend': 'Weekend traffic load',
+        'is_peak_hour': 'Peak commute hours',
+        'is_heavy_vehicle': 'Heavy vehicle risk',
+        'corridor_risk_score': 'Corridor baseline risk',
+        'corridor_events_2h': 'Recent event rate (2h)',
+        'corridor_events_6h': 'Persistent event rate (6h)',
+        'seed_event_present_3h': 'Recent infrastructure seeds',
+        'cascade_density': 'Historical cascade density',
+        'event_cause_encoded': 'Incident cause severity',
+        'corridor_encoded': 'Corridor local vulnerability'
+    }
+    
+    # Sort descending by positive impact (features driving up the risk score)
+    sorted_contribs = sorted(contrib_dict.items(), key=lambda x: x[1], reverse=True)
+    
+    shap_top = []
+    shap_values = []
+    for name, val in sorted_contribs:
+        # Avoid showing non-important contributors or raw encodings if possible
+        label = feature_labels.get(name, name)
+        shap_top.append(label)
+        shap_values.append(max(0.001, float(val)))
+        if len(shap_top) == 3:
+            break
+            
+    # Fallbacks if list is empty
+    while len(shap_top) < 3:
+        shap_top.append("Baseline operational parameters")
+        shap_values.append(0.10)
         
     return {
         "alert_id": alert_id,
@@ -388,7 +439,8 @@ def generate_alert(corridor: str, seed_event_row: dict, current_resources: dict)
             "prio_flag": prio_flag
         },
         "estimated_clearance_ist": clearance_str,
-        "shap_top3": shap_factors[:3]
+        "shap_top3": shap_top,
+        "shap_values3": shap_values
     }
 
 

@@ -3,8 +3,6 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-import folium
-from streamlit_folium import st_folium
 from pathlib import Path
 from datetime import datetime
 
@@ -261,32 +259,44 @@ if page == "Command Overview":
         
     with right_col:
         st.subheader("Live Operations Map")
-        map_center = [12.9716, 77.5946]
-        m = folium.Map(location=map_center, zoom_start=11)
-        
-        # Plot circle markers for filtered events
-        map_source = filtered_df.dropna(subset=['latitude', 'longitude'])
+        map_source = filtered_df.dropna(subset=['latitude', 'longitude']).copy()
         map_truncated = len(map_source) > 500
         map_data = map_source.head(500)
-        color_map = {'high': '#991b1b', 'medium': '#d97706', 'low': '#065f46'}
         
-        for idx, row in map_data.iterrows():
-            sev = str(row['congestion_severity']).lower()
-            color = color_map.get(sev, '#3b82f6')
-            risk = float(row['corridor_risk_score']) if not pd.isna(row['corridor_risk_score']) else 0.0
-            radius = max(risk * 10, 4)
+        if not map_data.empty:
+            map_data['severity_display'] = map_data['congestion_severity'].str.upper()
+            fig_map = px.scatter_mapbox(
+                map_data,
+                lat='latitude',
+                lon='longitude',
+                color='congestion_severity',
+                color_discrete_map={'high': '#ef4444', 'medium': '#f59e0b', 'low': '#10b981'},
+                size=map_data['corridor_risk_score'].fillna(0).clip(lower=0.1) * 15 + 5,
+                hover_name='corridor',
+                hover_data={'event_cause': True, 'severity_display': True, 'corridor_risk_score': ':.2f', 'latitude': False, 'longitude': False},
+                zoom=10.5,
+                center=dict(lat=12.9716, lon=77.5946),
+                height=400
+            )
+            fig_map.update_layout(
+                mapbox_style='open-street-map',
+                margin=dict(l=0, r=0, t=0, b=0),
+                showlegend=True,
+                legend=dict(
+                    title="Severity",
+                    yanchor="top",
+                    y=0.98,
+                    xanchor="left",
+                    x=0.02,
+                    bgcolor="rgba(255, 255, 255, 0.9)",
+                    bordercolor="#e2e8f0",
+                    borderwidth=1
+                )
+            )
+            st.plotly_chart(fig_map, width='stretch')
+        else:
+            st.info("No geocoded incidents to map for this period.")
             
-            folium.CircleMarker(
-                location=[row['latitude'], row['longitude']],
-                radius=radius,
-                color=color,
-                fill=True,
-                fill_color=color,
-                fill_opacity=0.6,
-                popup=f"Corridor: {row['corridor']}<br>Cause: {row['event_cause']}<br>Risk: {risk:.2f}<br>Severity: {sev.upper()}"
-            ).add_to(m)
-            
-        st_folium(m, width='stretch', height=400)
         if map_truncated:
             st.caption(f"Showing 500 of {len(map_source)} events. Apply filters to narrow down.")
         
@@ -425,14 +435,11 @@ elif page == "Cascade Alert System":
         
     st.write("")
     
-    # Horizontal Bar Chart — derive relative weights from context
+    # Horizontal Bar Chart — using true SHAP feature contributions
     shap_labels = alert_details['shap_top3']
-    # Compute dynamic weights based on actual risk factors
-    w1 = 0.20 + (0.30 * risk)  # Peak hour impact scales with risk
-    w2 = 0.15 + (0.20 * int(event_row_dict.get('seed_event_present_3h', 0)))
-    w3 = 0.10 + (0.15 * int(event_row_dict.get('is_heavy_vehicle', 0)))
-    total_w = w1 + w2 + w3
-    shap_values = [round(w1/total_w, 2), round(w2/total_w, 2), round(w3/total_w, 2)]
+    shap_raw_values = alert_details.get('shap_values3', [0.33, 0.33, 0.33])
+    sum_vals = sum(shap_raw_values)
+    shap_values = [round(v / sum_vals, 2) for v in shap_raw_values] if sum_vals > 0 else [0.33, 0.33, 0.33]
     
     fig_shap = go.Figure(go.Bar(
         x=shap_values[::-1],
