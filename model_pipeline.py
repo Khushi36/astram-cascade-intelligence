@@ -520,3 +520,16 @@ print("\nExample prediction:")
 print(f"Mysore Road on Thursday at 19:00 IST: {predict_next_2h('Mysore Road', 3, 19, 1, 2, 1)} expected events in next 2 hours.")
 
 print("\nAll models and metrics computed and saved to:", OUTPUT_DIR)
+
+# Write metadata file for dynamic version check
+import json
+import platform
+import sklearn
+
+metadata = {
+    "sklearn_version": sklearn.__version__,
+    "python_version": platform.python_version()
+}
+with open(OUTPUT_DIR / "model_meta.json", "w") as f:
+    json.dump(metadata, f, indent=2)
+print("Saved model metadata.")

@@ -40,6 +40,43 @@ def _ensure_loaded():
     if _loaded:
         return
     from sklearn.preprocessing import LabelEncoder
+    
+    # Dynamic self-healing: Check sklearn version compatibility and retrain if mismatched
+    import json
+    import platform
+    import sklearn
+    import subprocess
+    import sys
+    
+    meta_path = MODELS_DIR / "model_meta.json"
+    retrain = False
+    
+    if not meta_path.exists():
+        retrain = True
+    else:
+        try:
+            with open(meta_path, "r") as f:
+                meta = json.load(f)
+            if meta.get("sklearn_version") != sklearn.__version__:
+                print(f"sklearn version mismatch: model had {meta.get('sklearn_version')}, current system is {sklearn.__version__}.")
+                retrain = True
+        except Exception as e:
+            print(f"Error reading model metadata: {e}")
+            retrain = True
+            
+    if retrain:
+        print("Model version mismatch or metadata missing. Re-training models dynamically for this environment...")
+        try:
+            pipeline_path = _BASE_DIR / "model_pipeline.py"
+            result = subprocess.run([sys.executable, str(pipeline_path)], check=True, capture_output=True, text=True)
+            print("Dynamic retraining successful!")
+        except Exception as e:
+            print(f"Dynamic retraining failed: {e}. Attempting to load existing pickles anyway.")
+            if hasattr(e, 'stdout') and e.stdout:
+                print(f"Retrain stdout: {e.stdout}")
+            if hasattr(e, 'stderr') and e.stderr:
+                print(f"Retrain stderr: {e.stderr}")
+
     print("Loading trained models and threshold...")
     model_a = joblib.load(MODELS_DIR / "cascade_seed_model.pkl")
     model_b = joblib.load(MODELS_DIR / "severity_model.pkl")
