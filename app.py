@@ -433,76 +433,164 @@ elif page == "Cascade Alert System":
             'cause': event_cause,
         })
 
-    # Metrics 3-column row
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Expected secondary events in 2h", pred['predicted_secondary_count'])
-    with col2:
-        st.markdown(f"**Recommended action**<br><span style='font-size:1.1rem;font-weight:600;color:#1e293b;'>{alert_details['deployment']['DEPLOY_NOW']}</span>", unsafe_allow_html=True)
-    with col3:
-        st.markdown(f"**Estimated clearance**<br><span style='font-size:1.1rem;font-weight:600;color:#1e293b;'>{alert_details['estimated_clearance_ist']}</span>", unsafe_allow_html=True)
+    # ── Main layout columns: Left for Risk assessment, Right for Explainability ──────────────────────────
+    left_chart_col, right_chart_col = st.columns([1, 1])
+    
+    with left_chart_col:
+        # Donut / Gauge Chart for Cascade Risk
+        fig_gauge = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=risk * 100,
+            domain={'x': [0, 1], 'y': [0, 1]},
+            title={'text': "Cascade Risk Level", 'font': {'size': 18, 'color': '#1e293b', 'weight': 'bold'}},
+            number={'suffix': "%", 'font': {'size': 36, 'color': '#1e293b', 'weight': 'bold'}},
+            gauge={
+                'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "#475569"},
+                'bar': {'color': '#0f172a'}, # Dark slate pointer bar
+                'bgcolor': "white",
+                'borderwidth': 1,
+                'bordercolor': "#e2e8f0",
+                'steps': [
+                    {'range': [0, 30], 'color': '#10b981'}, # Green
+                    {'range': [30, 60], 'color': '#f59e0b'}, # Amber
+                    {'range': [60, 100], 'color': '#ef4444'} # Red
+                ],
+            }
+        ))
+        fig_gauge.update_layout(
+            height=240,
+            margin=dict(l=30, r=30, t=50, b=10),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)'
+        )
+        st.plotly_chart(fig_gauge, use_container_width=True)
+        
+        # Human readable summary
+        st.markdown(f"""
+        <div style="background-color:#f8fafc; border-left: 4px solid #3b82f6; padding: 12px; border-radius: 6px; margin-top: 5px;">
+            <p style="margin:0; font-weight:600; color:#1e293b; font-size:0.9rem;">🔍 Risk Assessment Summary</p>
+            <p style="margin:4px 0 0 0; font-size:0.85rem; color:#475569; line-height:1.4;">
+                An incident of type <b>{event_cause}</b> on <b>{corridor_selected}</b> yields a 
+                <b>{risk*100:.0f}%</b> risk of secondary cascade events within the next 2 hours. 
+                Recommended Response Level: <span style="font-weight:700; color:{'#ef4444' if tier=='RED' else '#d97706' if tier=='AMBER' else '#059669'};">{tier}</span>.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with right_chart_col:
+        # Horizontal Bar Chart — using true SHAP feature contributions
+        shap_labels = alert_details['shap_top3']
+        shap_raw_values = alert_details.get('shap_values3', [0.33, 0.33, 0.33])
+        sum_vals = sum(shap_raw_values)
+        shap_values = [round(v / sum_vals, 2) for v in shap_raw_values] if sum_vals > 0 else [0.33, 0.33, 0.33]
+        
+        fig_shap = go.Figure(go.Bar(
+            x=shap_values[::-1],
+            y=shap_labels[::-1],
+            orientation='h',
+            marker_color=['#ef4444', '#f59e0b', '#3b82f6'][::-1]
+        ))
+        fig_shap.update_layout(
+            title="Primary Risk Drivers (SHAP Explainability)",
+            xaxis_title="Relative Contribution Weight",
+            template="plotly_white",
+            height=240,
+            margin=dict(l=20, r=20, t=50, b=10)
+        )
+        st.plotly_chart(fig_shap, use_container_width=True)
+        st.caption("Factors derived from dynamic model feature values.")
         
     st.write("")
     
-    # Horizontal Bar Chart — using true SHAP feature contributions
-    shap_labels = alert_details['shap_top3']
-    shap_raw_values = alert_details.get('shap_values3', [0.33, 0.33, 0.33])
-    sum_vals = sum(shap_raw_values)
-    shap_values = [round(v / sum_vals, 2) for v in shap_raw_values] if sum_vals > 0 else [0.33, 0.33, 0.33]
-    
-    fig_shap = go.Figure(go.Bar(
-        x=shap_values[::-1],
-        y=shap_labels[::-1],
-        orientation='h',
-        marker_color=['#ef4444', '#f59e0b', '#3b82f6'][::-1]
-    ))
-    fig_shap.update_layout(
-        title="Key Risk Factors",
-        xaxis_title="Relative Impact",
-        template="plotly_white",
-        height=260,
-        margin=dict(l=20, r=20, t=40, b=20)
-    )
-    st.plotly_chart(fig_shap, width='stretch')
-    st.caption("Factors derived from input feature values.")
-    
-    # Deployment DataFrame Card — shown for ALL tiers with tier-appropriate resources
-    st.subheader("Response Resource Action Card")
+    # ── Visual Resource Dispatch Grid ──────────────────────────
+    st.subheader("Response Resource Action Dashboard")
     dep = alert_details['deployment']
-
-    # Tier-specific overrides for AMBER and GREEN (RED uses model output directly)
+    
+    # Tier-specific overrides for AMBER and GREEN
     if tier == "RED":
         police_disp   = dep['police_needed']
         bd_disp       = dep['breakdown_needed']
         barr_disp     = dep['barricades_needed']
         action_disp   = dep['DEPLOY_NOW']
         status_disp   = dep['police_flag']
+        status_color  = "#fee2e2" # Light Red
+        text_color    = "#991b1b"
     elif tier == "AMBER":
         police_disp   = max(dep['police_needed'], 2)
         bd_disp       = max(dep['breakdown_needed'], 1)
         barr_disp     = max(dep['barricades_needed'], 1)
         action_disp   = f"Pre-position {police_disp} traffic police and {bd_disp} breakdown unit(s) near {corridor_selected}"
-        status_disp   = "STANDBY — deploy on confirmation"
+        status_disp   = "STANDBY — Deploy on confirmation"
+        status_color  = "#fef3c7" # Light Orange
+        text_color    = "#78350f"
     else:  # GREEN
         police_disp   = 1
         bd_disp       = 1 if event_cause in ['accident', 'vehicle_breakdown', 'tree_fall'] else 0
         barr_disp     = 1 if event_cause in ['accident', 'water_logging', 'tree_fall'] else 0
-        action_disp   = f"Dispatch 1 patrol officer to {corridor_selected} — standard incident monitoring"
+        action_disp   = f"Dispatch 1 patrol officer to {corridor_selected} — routine monitoring"
         status_disp   = "ROUTINE MONITORING"
-
-    dep_df = pd.DataFrame([{
-        "Corridor":               corridor_selected,
-        "Incident Cause":         event_cause,
-        "Risk Level":             f"{tier} ({risk*100:.0f}%)",
-        "Police Officers":        police_disp,
-        "Breakdown Units":        bd_disp,
-        "Barricades":             barr_disp,
-        "Deployment Instruction": action_disp,
-        "Alert Station":          dep['ALERT_STATIONS'],
-        "Estimated Clearance":    alert_details['estimated_clearance_ist'],
-        "Status":                 status_disp,
-    }])
-    st.dataframe(dep_df, width='stretch', hide_index=True)
+        status_color  = "#dcfce7" # Light Green
+        text_color    = "#065f46"
+        
+    # Grid of Cards
+    rc_col1, rc_col2, rc_col3 = st.columns(3)
+    
+    with rc_col1:
+        st.markdown(f"""
+        <div style="background-color:#f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; text-align: center;">
+            <p style="margin: 0; font-size: 0.9rem; color: #64748b; font-weight: 600; text-transform: uppercase;">👮 Traffic Police</p>
+            <p style="margin: 8px 0; font-size: 2.2rem; font-weight: 700; color: #0f172a;">{police_disp}</p>
+            <p style="margin: 0; font-size: 0.8rem; color: #475569; font-weight: 500;">Officers Dispatched</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with rc_col2:
+        st.markdown(f"""
+        <div style="background-color:#f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; text-align: center;">
+            <p style="margin: 0; font-size: 0.9rem; color: #64748b; font-weight: 600; text-transform: uppercase;">🚒 Breakdown Recovery</p>
+            <p style="margin: 8px 0; font-size: 2.2rem; font-weight: 700; color: #0f172a;">{bd_disp}</p>
+            <p style="margin: 0; font-size: 0.8rem; color: #475569; font-weight: 500;">Towing Units Dispatched</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    with rc_col3:
+        st.markdown(f"""
+        <div style="background-color:#f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; text-align: center;">
+            <p style="margin: 0; font-size: 0.9rem; color: #64748b; font-weight: 600; text-transform: uppercase;">🚧 Barricades</p>
+            <p style="margin: 8px 0; font-size: 2.2rem; font-weight: 700; color: #0f172a;">{barr_disp}</p>
+            <p style="margin: 0; font-size: 0.8rem; color: #475569; font-weight: 500;">Blockage Gates Dispatched</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+    st.write("")
+    
+    # Dispatch Details Card
+    st.markdown(f"""
+    <div style="background-color:#f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; margin-bottom: 12px;">
+            <span style="font-weight: 600; color: #334155; font-size: 1rem;">📋 Operational Dispatch Details</span>
+            <span style="background-color: {status_color}; color: {text_color}; font-size: 0.8rem; font-weight: 700; padding: 4px 8px; border-radius: 4px; text-transform: uppercase;">{status_disp}</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+            <div>
+                <p style="margin: 0; font-size: 0.85rem; color: #64748b;">🎯 Recommended Action</p>
+                <p style="margin: 4px 0 0 0; font-size: 0.95rem; font-weight: 600; color: #0f172a;">{action_disp}</p>
+            </div>
+            <div>
+                <p style="margin: 0; font-size: 0.85rem; color: #64748b;">📡 Dispatch Station</p>
+                <p style="margin: 4px 0 0 0; font-size: 0.95rem; font-weight: 600; color: #0f172a;">{dep['ALERT_STATIONS']}</p>
+            </div>
+            <div>
+                <p style="margin: 0; font-size: 0.85rem; color: #64748b;">⏳ Estimated Clearance Time</p>
+                <p style="margin: 4px 0 0 0; font-size: 0.95rem; font-weight: 600; color: #0f172a;">{alert_details['estimated_clearance_ist']}</p>
+            </div>
+            <div>
+                <p style="margin: 0; font-size: 0.85rem; color: #64748b;">📈 Expected Secondary Count</p>
+                <p style="margin: 4px 0 0 0; font-size: 0.95rem; font-weight: 600; color: #0f172a;">{pred['predicted_secondary_count']} events (next 2 hours)</p>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE 3 — MARCH 7, 2024 REPLAY
