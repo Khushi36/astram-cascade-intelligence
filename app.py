@@ -374,12 +374,12 @@ elif page == "Cascade Alert System":
         
         # Calculate typical active events in these buckets
         if not hist_2h.empty:
-            dyn_events_2h = int(np.ceil(hist_2h.groupby(hist_2h['start_ist'].dt.date).size().mean()))
+            dyn_events_2h = int(np.ceil(hist_2h.groupby(hist_2h['start_datetime_ist'].dt.date).size().mean()))
         else:
             dyn_events_2h = 0
             
         if not hist_6h.empty:
-            dyn_events_6h = int(np.ceil(hist_6h.groupby(hist_6h['start_ist'].dt.date).size().mean()))
+            dyn_events_6h = int(np.ceil(hist_6h.groupby(hist_6h['start_datetime_ist'].dt.date).size().mean()))
         else:
             dyn_events_6h = 0
 
