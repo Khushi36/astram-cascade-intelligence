@@ -381,14 +381,11 @@ features_b = [
     'hour_of_day', 'day_of_week', 'is_weekend', 'is_peak_hour',
     'is_heavy_vehicle', 'corridor_risk_score',
     'event_cause_encoded', 'corridor_encoded',
-    'requires_road_closure', 'secondary_count'
+    'secondary_count'
 ]
 
 X_train_b = df_train[features_b].copy()
 X_test_b = df_test[features_b].copy()
-
-X_train_b['requires_road_closure'] = X_train_b['requires_road_closure'].astype(int)
-X_test_b['requires_road_closure'] = X_test_b['requires_road_closure'].astype(int)
 
 model_b = xgb.XGBClassifier(
     n_estimators=300,

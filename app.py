@@ -124,6 +124,7 @@ df = load_data()
 # Navigation + live mode + alert log
 st.sidebar.title("ASTRAM OPS")
 page = st.sidebar.radio("Navigation", ["Command Overview", "Cascade Alert System", "March 7, 2024 Replay (The Proof)"])
+user_mode = st.sidebar.radio("User Mode", ["📢 Public Dashboard", "📡 Ops Dispatcher"])
 
 # Live mode auto-refresh
 live_mode = st.sidebar.toggle("🔴 Live Mode (auto-refresh 30s)", value=False)
@@ -436,8 +437,8 @@ elif page == "Cascade Alert System":
         st.markdown('<div class="safe-banner">🟢 GREEN — LOW RISK ({:.0f}%) — Monitor only</div>'.format(risk*100), unsafe_allow_html=True)
         tier = "GREEN"
 
-    # Append RED/AMBER to session alert log
-    if tier in ("RED", "AMBER"):
+    # Append RED/AMBER to session alert log (automatic in public mode only)
+    if user_mode == "📢 Public Dashboard" and tier in ("RED", "AMBER"):
         st.session_state.alert_log.append({
             'time': datetime.now(),
             'corridor': corridor_selected,
@@ -604,6 +605,37 @@ elif page == "Cascade Alert System":
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+    # ── Interactive Control Center Console (Ops Dispatcher Mode) ──────────────────────────
+    if user_mode == "📡 Ops Dispatcher":
+        st.write("")
+        st.subheader("⚡ Live Operations Control Console")
+        st.caption("🔒 Authorized dispatcher actions. Click a button below to authorize dispatch or pre-positioning.")
+        
+        col_act1, col_act2 = st.columns(2)
+        with col_act1:
+            if st.button("🚨 CONFIRM IMMEDIATE DISPATCH", type="primary", key="btn_confirm_disp"):
+                st.toast(f"👮 Dispatched {police_disp} officers, {bd_disp} breakdown units, and {barr_disp} barricades to {corridor_selected}!", icon="✅")
+                st.success(f"🚨 **Dispatch Confirmed**: Resources deployed to {corridor_selected} via {dep['ALERT_STATIONS']}.")
+                # Append to alert log
+                st.session_state.alert_log.append({
+                    'time': datetime.now(),
+                    'corridor': corridor_selected,
+                    'risk': f"{risk*100:.0f}% (DISPATCHED)",
+                    'tier': tier,
+                    'cause': event_cause,
+                })
+        with col_act2:
+            if st.button("⏳ ORDER PRE-POSITION STANDBY", key="btn_standby_disp"):
+                st.toast(f"📡 Standby units ordered for {corridor_selected}!", icon="⏳")
+                st.warning(f"⚠️ **Standby Active**: Pre-positioning warning issued to {dep['ALERT_STATIONS']}.")
+                st.session_state.alert_log.append({
+                    'time': datetime.now(),
+                    'corridor': corridor_selected,
+                    'risk': f"{risk*100:.0f}% (STANDBY)",
+                    'tier': tier,
+                    'cause': event_cause,
+                })
 
 # ══════════════════════════════════════════════════════════════════════════════
 # PAGE 3 — MARCH 7, 2024 REPLAY
