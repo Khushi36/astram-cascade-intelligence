@@ -93,7 +93,7 @@ ro = load_prediction_system()
 # Load Dataset (cached data)
 @st.cache_data
 def load_data():
-    df = pd.read_csv(r"C:\Users\Khushi\Downloads\Traffic\eda_outputs\traffic_events_engineered.csv")
+    df = pd.read_csv(Path(__file__).parent / "eda_outputs" / "traffic_events_engineered.csv")
     df['start_datetime_ist'] = pd.to_datetime(df['start_datetime_ist'])
     
     # Sort chronologically by corridor to tag cascade seeds
@@ -449,7 +449,8 @@ elif page == "March 7, 2024 Replay (The Proof)":
     # Load Mysore Road data for replay
     @st.cache_data
     def load_replay_data():
-        df_raw = pd.read_csv(r"C:\Users\Khushi\Downloads\Traffic\Astram event data_anonymized - Astram event data_anonymizedb40ac87.csv")
+        _data_path = Path(__file__).parent / "Astram event data_anonymized - Astram event data_anonymizedb40ac87.csv"
+        df_raw = pd.read_csv(_data_path)
         df_raw['start_datetime'] = pd.to_datetime(df_raw['start_datetime'], utc=True, errors='coerce')
         df_raw['start_ist'] = df_raw['start_datetime'].dt.tz_convert('Asia/Kolkata')
         df_raw['date_str'] = df_raw['start_ist'].dt.strftime('%Y-%m-%d')

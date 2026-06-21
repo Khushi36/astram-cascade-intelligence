@@ -35,7 +35,5 @@ streamlit_log.txt
 streamlit_out.txt
 *.log
 
-# Large data files (raw source data)
-Astram event data_anonymized*
-*_anonymized*.csv
-eda_outputs/traffic_events_engineered.csv
+# Large data files are included for Streamlit Cloud deployment
+

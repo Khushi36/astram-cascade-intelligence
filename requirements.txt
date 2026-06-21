@@ -12,3 +12,5 @@ scipy==1.16.1
 extra-streamlit-components==0.1.81
 streamlit-agraph==0.0.45
 streamlit-card==1.0.2
+folium
+streamlit-folium
