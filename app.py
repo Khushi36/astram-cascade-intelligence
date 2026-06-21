@@ -4,6 +4,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 import folium
+from streamlit_folium import st_folium
 from pathlib import Path
 from datetime import datetime
 
@@ -232,7 +233,7 @@ if page == "Command Overview":
             xaxis=dict(tickmode='linear', tick0=0, dtick=1),
             margin=dict(l=20, r=20, t=40, b=20)
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         st.caption("🔴 Red bars = model-defined operational shift windows (04:00–06:00, 19:00–22:00 IST). Actual reporting peaks at 02:00 and 11:00 IST reflect overnight monitoring patterns.")
         
     with right_col:
@@ -262,7 +263,7 @@ if page == "Command Overview":
                 popup=f"Corridor: {row['corridor']}<br>Cause: {row['event_cause']}<br>Risk: {risk:.2f}<br>Severity: {sev.upper()}"
             ).add_to(m)
             
-        st.components.v1.html(m._repr_html_(), height=400)
+        st_folium(m, width='stretch', height=400)
         if map_truncated:
             st.caption(f"Showing 500 of {len(map_source)} events. Apply filters to narrow down.")
         
@@ -276,7 +277,7 @@ if page == "Command Overview":
                 secondary_events_count=('sec_count', 'sum')
             ).sort_values(by='seeds_count', ascending=False).reset_index()
             summary_df.columns = ["Corridor", "Cascade Seeds Count", "Secondary Events Triggered"]
-            st.dataframe(summary_df, use_container_width=True, hide_index=True)
+            st.dataframe(summary_df, width='stretch', hide_index=True)
             
         with exp_col2:
             st.markdown("""
@@ -401,7 +402,7 @@ elif page == "Cascade Alert System":
         height=260,
         margin=dict(l=20, r=20, t=40, b=20)
     )
-    st.plotly_chart(fig_shap, use_container_width=True)
+    st.plotly_chart(fig_shap, width='stretch')
     st.caption("Factors derived from input feature values.")
     
     # Deployment DataFrame Card — full context for operations officers
@@ -420,7 +421,7 @@ elif page == "Cascade Alert System":
             "Estimated Clearance": alert_details['estimated_clearance_ist'],
             "Status": dep['police_flag']
         }])
-        st.dataframe(dep_df, use_container_width=True, hide_index=True)
+        st.dataframe(dep_df, width='stretch', hide_index=True)
     elif tier == "AMBER":
         st.subheader("Response Resource Action Card")
         st.info("Pre-positioning resources. No full deployment required at this time.")
@@ -489,7 +490,7 @@ elif page == "March 7, 2024 Replay (The Proof)":
                 x=10.85, line_width=2, line_dash="dash", line_color="red",
                 annotation_text="CASCADE SEED DETECTED", annotation_position="top right"
             )
-        st.plotly_chart(fig_timeline, use_container_width=True)
+        st.plotly_chart(fig_timeline, width='stretch')
     else:
         st.info("No incidents reported on Mysore Road prior to this hour.")
         
@@ -499,7 +500,7 @@ elif page == "March 7, 2024 Replay (The Proof)":
         df_disp = replay_filtered.copy()
         df_disp['start_ist'] = df_disp['start_ist'].dt.strftime('%H:%M:%S')
         df_disp = df_disp[['start_ist', 'event_cause_grouped', 'priority', 'requires_road_closure']]
-        st.dataframe(df_disp, use_container_width=True, hide_index=True)
+        st.dataframe(df_disp, width='stretch', hide_index=True)
     else:
         st.write("Incident stream is empty.")
         
@@ -523,8 +524,8 @@ elif page == "March 7, 2024 Replay (The Proof)":
         plan_filtered = plan_df[plan_df['hour_ist'] <= selected_hour]
         
         st.dataframe(
-            plan_filtered.drop(columns=['hour_ist']), 
-            use_container_width=True, 
+            plan_filtered.drop(columns=['hour_ist']),
+            width='stretch',
             hide_index=True
         )
         
