@@ -357,18 +357,31 @@ elif page == "Cascade Alert System":
             typical_ps = 'Unknown Station'
             typical_risk = 0.0
             
-        # Build input features — compute rolling corridor counts from real data
-        now_proxy = df['start_datetime_ist'].max()  # latest event as proxy for "now"
-        window_2h = df[
-            (df['corridor'] == corridor_selected) &
-            (df['start_datetime_ist'] >= now_proxy - pd.Timedelta(hours=2))
+        # Build input features — compute rolling corridor counts from real historical trends for selected slot
+        corr_hist = df[df['corridor'] == corridor_selected]
+        
+        # Filter to events that occurred on the same day of week, in the preceding 2 and 6 hour windows
+        hist_2h = corr_hist[
+            (corr_hist['day_of_week'] == day_of_week_num) &
+            (corr_hist['hour_of_day'] >= max(0, hour_ist - 2)) &
+            (corr_hist['hour_of_day'] <= hour_ist)
         ]
-        window_6h = df[
-            (df['corridor'] == corridor_selected) &
-            (df['start_datetime_ist'] >= now_proxy - pd.Timedelta(hours=6))
+        hist_6h = corr_hist[
+            (corr_hist['day_of_week'] == day_of_week_num) &
+            (corr_hist['hour_of_day'] >= max(0, hour_ist - 6)) &
+            (corr_hist['hour_of_day'] <= hour_ist)
         ]
-        dyn_events_2h = len(window_2h)
-        dyn_events_6h = len(window_6h)
+        
+        # Calculate typical active events in these buckets
+        if not hist_2h.empty:
+            dyn_events_2h = int(np.ceil(hist_2h.groupby(hist_2h['start_ist'].dt.date).size().mean()))
+        else:
+            dyn_events_2h = 0
+            
+        if not hist_6h.empty:
+            dyn_events_6h = int(np.ceil(hist_6h.groupby(hist_6h['start_ist'].dt.date).size().mean()))
+        else:
+            dyn_events_6h = 0
 
         event_row_dict = {
             'hour_of_day': hour_ist,
